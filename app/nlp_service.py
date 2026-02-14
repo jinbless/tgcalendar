@@ -80,6 +80,26 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "add_events_by_range",
+            "description": "여러 날에 걸쳐 같은 일정을 추가합니다. '24일부터 26일까지 회의', '월~금 매일 스탠드업' 등 날짜 구간 일정 추가에 호출하세요.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "일정 제목"},
+                    "date_from": {"type": "string", "description": "시작 날짜 (YYYY-MM-DD)"},
+                    "date_to": {"type": "string", "description": "종료 날짜 (YYYY-MM-DD)"},
+                    "start_time": {"type": "string", "description": "시작 시간 (HH:MM 형식, 24시간)"},
+                    "end_time": {"type": "string", "description": "종료 시간 (HH:MM 형식, 24시간). 언급 없으면 생략"},
+                    "description": {"type": "string", "description": "일정 설명. 언급 없으면 생략"},
+                },
+                "required": ["title", "date_from", "date_to", "start_time"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delete_event",
             "description": "캘린더에서 일정을 삭제합니다. 사용자가 삭제/취소/지워줘 등을 요청할 때 호출하세요.",
             "parameters": {

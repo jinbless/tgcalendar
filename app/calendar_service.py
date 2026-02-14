@@ -199,6 +199,65 @@ async def add_event(
         return False, "알 수 없는 오류가 발생했습니다."
 
 
+# ── Add Events by Range ──────────────────────────────────────────
+
+async def add_events_by_range(
+    chat_id: int,
+    title: str,
+    date_from: str,
+    date_to: str,
+    start_time: str,
+    end_time: str | None = None,
+    description: str | None = None,
+) -> tuple[int, str]:
+    """Add an event on each day from date_from to date_to. Returns (count, error)."""
+    creds = await asyncio.to_thread(_load_credentials, chat_id)
+    if creds is None:
+        return 0, "인증이 만료되었습니다. /start로 다시 인증해주세요."
+
+    def _insert_range():
+        start_date = _safe_parse_date(date_from)
+        end_date = _safe_parse_date(date_to)
+        service = build("calendar", "v3", credentials=creds)
+
+        created = 0
+        current = start_date
+        while current <= end_date:
+            date_str = current.strftime("%Y-%m-%d")
+            start_dt = datetime.strptime(f"{date_str} {start_time}", "%Y-%m-%d %H:%M")
+            if end_time:
+                end_dt = datetime.strptime(f"{date_str} {end_time}", "%Y-%m-%d %H:%M")
+            else:
+                end_dt = start_dt + timedelta(hours=1)
+
+            event_body = {
+                "summary": title,
+                "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE_STR},
+                "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE_STR},
+            }
+            if description:
+                event_body["description"] = description
+
+            service.events().insert(
+                calendarId=SHARED_CALENDAR_ID, body=event_body
+            ).execute()
+            created += 1
+            current += timedelta(days=1)
+
+        return created, ""
+
+    try:
+        count, error = await asyncio.to_thread(_insert_range)
+        return count, error
+    except HttpError as e:
+        if e.resp.status == 403:
+            return 0, "캘린더 접근 권한이 없습니다."
+        return 0, f"Google API 오류: {e.resp.status}"
+    except Exception:
+        logger.exception("Unexpected error in add_events_by_range")
+        return 0, "알 수 없는 오류가 발생했습니다."
+
+
 # ── Delete Event ──────────────────────────────────────────────────
 
 async def delete_event(
