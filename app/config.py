@@ -36,4 +36,4 @@ DAILY_REPORT_TIME: str = os.environ.get("DAILY_REPORT_TIME", "09:00")
 GOOGLE_SCOPES: list[str] = ["https://www.googleapis.com/auth/calendar"]
 
 # OpenAI model
-OPENAI_MODEL: str = "gpt-4o"
+OPENAI_MODEL: str = "gpt-4.1"
