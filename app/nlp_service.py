@@ -100,6 +100,24 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "add_multiday_event",
+            "description": "여러 날에 걸치는 단일 종일 일정을 추가합니다. 출장, 휴가, 여행 등 기간 일정에 호출하세요. 예: '2월28일부터 3월10일까지 브라질 출장', '다음주 월~금 연차'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "일정 제목"},
+                    "date_from": {"type": "string", "description": "시작 날짜 (YYYY-MM-DD)"},
+                    "date_to": {"type": "string", "description": "종료 날짜 (YYYY-MM-DD)"},
+                    "description": {"type": "string", "description": "일정 설명. 언급 없으면 생략"},
+                },
+                "required": ["title", "date_from", "date_to"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delete_event",
             "description": "캘린더에서 일정을 삭제합니다. 사용자가 삭제/취소/지워줘 등을 요청할 때 호출하세요.",
             "parameters": {
@@ -215,7 +233,9 @@ SYSTEM_PROMPT = """당신은 캘린더 관리 어시스턴트입니다.
 - 이전 대화에서 조회한 일정 결과를 참고하여 사용자가 "그거", "첫 번째", "그 회의" 등으로 지칭하는 일정을 파악하세요.
 - 사용자가 이전 조회 결과의 일정을 수정/삭제하려 할 때, 해당 일정의 제목/날짜/시간을 정확히 추출하세요.
 - 범위 삭제 요청("2월 일정 다 지워줘", "이번 주 일정 전부 삭제")에는 delete_events_by_range를 사용하세요.
-- 사용자가 특정 날짜+시간의 기존 일정을 언급하면서 수정/삭제를 요청하면, 새 일정 추가가 아닌 edit_event 또는 delete_event를 호출하세요."""
+- 사용자가 특정 날짜+시간의 기존 일정을 언급하면서 수정/삭제를 요청하면, 새 일정 추가가 아닌 edit_event 또는 delete_event를 호출하세요.
+- 출장, 휴가, 여행 등 기간 일정은 add_multiday_event를 사용하세요 (종일 단일 이벤트).
+- 매일 같은 시간에 반복되는 일정(회의, 스탠드업 등)은 add_events_by_range를 사용하세요."""
 
 
 # ── Public API ────────────────────────────────────────────────────

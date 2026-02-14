@@ -114,6 +114,16 @@ async def _exec_add_events_by_range(chat_id: int, args: dict) -> str:
     return f"❌ 일정 추가 실패\n{error}"
 
 
+async def _exec_add_multiday_event(chat_id: int, args: dict) -> str:
+    success, result = await calendar_service.add_multiday_event(chat_id=chat_id, **args)
+    if success:
+        reply = f"✅ 일정이 추가되었습니다!\n\n📅 {args['date_from']} ~ {args['date_to']}\n📝 {args['title']}"
+        if args.get("description"):
+            reply += f"\n💬 {args['description']}"
+        return reply
+    return f"❌ 일정 추가 실패\n{result}"
+
+
 async def _exec_delete_event(chat_id: int, args: dict) -> str:
     success, result = await calendar_service.delete_event(chat_id=chat_id, **args)
     if success:
@@ -171,6 +181,7 @@ async def _exec_search_events(chat_id: int, args: dict) -> str:
 FUNCTION_REGISTRY = {
     "add_event": _exec_add_event,
     "add_events_by_range": _exec_add_events_by_range,
+    "add_multiday_event": _exec_add_multiday_event,
     "delete_event": _exec_delete_event,
     "delete_events_by_range": _exec_delete_events_by_range,
     "edit_event": _exec_edit_event,
@@ -179,12 +190,12 @@ FUNCTION_REGISTRY = {
     "search_events": _exec_search_events,
 }
 
-_MUTATION_FUNCTIONS = {"add_event", "add_events_by_range", "delete_event", "delete_events_by_range", "edit_event"}
+_MUTATION_FUNCTIONS = {"add_event", "add_events_by_range", "add_multiday_event", "delete_event", "delete_events_by_range", "edit_event"}
 
 
 def _extract_month_range(fn_name: str, args: dict) -> tuple[str, str] | None:
     """Return (YYYY-MM-DD, YYYY-MM-DD) for the month affected by a mutation."""
-    if fn_name in ("delete_events_by_range", "add_events_by_range"):
+    if fn_name in ("delete_events_by_range", "add_events_by_range", "add_multiday_event"):
         date_str = args.get("date_from", "")
     elif fn_name == "edit_event":
         # If the date was changed, show the new month

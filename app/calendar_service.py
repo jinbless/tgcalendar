@@ -258,6 +258,51 @@ async def add_events_by_range(
         return 0, "알 수 없는 오류가 발생했습니다."
 
 
+# ── Add Multi-day Event ──────────────────────────────────────────
+
+async def add_multiday_event(
+    chat_id: int,
+    title: str,
+    date_from: str,
+    date_to: str,
+    description: str | None = None,
+) -> tuple[bool, str]:
+    """Create a single all-day event spanning date_from to date_to."""
+    creds = await asyncio.to_thread(_load_credentials, chat_id)
+    if creds is None:
+        return False, "인증이 만료되었습니다. /start로 다시 인증해주세요."
+
+    def _insert():
+        # end.date is exclusive in Google Calendar API
+        end_date = _safe_parse_date(date_to) + timedelta(days=1)
+        end_date_str = end_date.strftime("%Y-%m-%d")
+
+        event_body = {
+            "summary": title,
+            "start": {"date": date_from},
+            "end": {"date": end_date_str},
+        }
+        if description:
+            event_body["description"] = description
+
+        service = build("calendar", "v3", credentials=creds)
+        event = service.events().insert(
+            calendarId=SHARED_CALENDAR_ID, body=event_body
+        ).execute()
+        return event.get("htmlLink", "")
+
+    try:
+        link = await asyncio.to_thread(_insert)
+        return True, link
+    except HttpError as e:
+        if e.resp.status == 403:
+            return False, "캘린더 접근 권한이 없습니다."
+        return False, f"Google API 오류: {e.resp.status}"
+    except Exception:
+        logger.exception("Unexpected error in add_multiday_event")
+        return False, "알 수 없는 오류가 발생했습니다."
+
+
 # ── Delete Event ──────────────────────────────────────────────────
 
 async def delete_event(
