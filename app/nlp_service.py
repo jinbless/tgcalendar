@@ -12,7 +12,7 @@ _client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # ── Chat History ─────────────────────────────────────────────────
 
-MAX_HISTORY = 20  # max messages per chat (FIFO)
+MAX_HISTORY = 50  # max messages per chat (FIFO)
 _chat_histories: dict[int, list[dict]] = {}
 
 

@@ -1,3 +1,4 @@
+import calendar as cal
 import logging
 from datetime import datetime
 
@@ -166,6 +167,76 @@ FUNCTION_REGISTRY = {
     "search_events": _exec_search_events,
 }
 
+_MUTATION_FUNCTIONS = {"add_event", "delete_event", "delete_events_by_range", "edit_event"}
+
+
+def _extract_month_range(fn_name: str, args: dict) -> tuple[str, str] | None:
+    """Return (YYYY-MM-DD, YYYY-MM-DD) for the month affected by a mutation."""
+    if fn_name == "delete_events_by_range":
+        date_str = args.get("date_from", "")
+    elif fn_name == "edit_event":
+        # If the date was changed, show the new month
+        date_str = args.get("changes", {}).get("date") or args.get("date", "")
+    else:
+        date_str = args.get("date", "")
+
+    if not date_str or len(date_str) < 7:
+        return None
+
+    try:
+        year, month = int(date_str[:4]), int(date_str[5:7])
+        last_day = cal.monthrange(year, month)[1]
+        return f"{year}-{month:02d}-01", f"{year}-{month:02d}-{last_day:02d}"
+    except (ValueError, IndexError):
+        return None
+
+
+async def _get_month_summary(chat_id: int, fn_name: str, args: dict) -> str | None:
+    """Fetch and format the affected month's events after a mutation."""
+    month_range = _extract_month_range(fn_name, args)
+    if not month_range:
+        return None
+
+    date_from, date_to = month_range
+    try:
+        events = await calendar_service.search_events(
+            chat_id=chat_id, date_from=date_from, date_to=date_to
+        )
+    except Exception:
+        logger.exception("Error fetching month summary")
+        return None
+
+    month_label = f"{date_from[:4]}년 {int(date_from[5:7])}월"
+
+    if not events:
+        return f"\n📋 {month_label} 전체 일정: 없음"
+
+    lines = [f"\n📋 {month_label} 전체 일정 ({len(events)}건):"]
+    current_date = ""
+    for event in events:
+        summary = event.get("summary", "(제목 없음)")
+        start = event.get("start", {})
+
+        if "dateTime" in start:
+            dt_str = start["dateTime"][:10]
+            time_str = start["dateTime"][11:16]
+        else:
+            dt_str = start.get("date", "")
+            time_str = "종일"
+
+        if dt_str != current_date:
+            current_date = dt_str
+            try:
+                dt = datetime.strptime(dt_str, "%Y-%m-%d")
+                weekday = WEEKDAY_NAMES[dt.weekday()]
+                lines.append(f"\n  📆 {dt_str} ({weekday})")
+            except ValueError:
+                lines.append(f"\n  📆 {dt_str}")
+
+        lines.append(f"    🕐 {time_str} - {summary}")
+
+    return "\n".join(lines)
+
 
 # ── Natural Language Message Handler ──────────────────────────────
 
@@ -204,6 +275,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if tool_call_id:
             nlp_service.add_tool_result(chat_id, tool_call_id, reply)
         await update.message.reply_text(reply)
+
+        # After mutation, show the affected month's events
+        if fn_name in _MUTATION_FUNCTIONS:
+            month_summary = await _get_month_summary(chat_id, fn_name, args)
+            if month_summary:
+                await update.message.reply_text(month_summary)
     except Exception:
         logger.exception("Error executing %s", fn_name)
         if tool_call_id:
