@@ -33,7 +33,7 @@ def _token_path(chat_id: int) -> Path:
 
 def _create_flow() -> Flow:
     client_config = {
-        "installed": {
+        "web": {
             "client_id": GOOGLE_CLIENT_ID,
             "client_secret": GOOGLE_CLIENT_SECRET,
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -48,11 +48,12 @@ def _create_flow() -> Flow:
     )
 
 
-def get_auth_url() -> str:
+def get_auth_url(chat_id: int) -> str:
     flow = _create_flow()
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         prompt="consent",
+        state=str(chat_id),
     )
     return auth_url
 

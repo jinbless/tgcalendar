@@ -35,5 +35,8 @@ DAILY_REPORT_TIME: str = os.environ.get("DAILY_REPORT_TIME", "09:00")
 # Google Calendar API scope
 GOOGLE_SCOPES: list[str] = ["https://www.googleapis.com/auth/calendar"]
 
+# OAuth callback server
+OAUTH_SERVER_PORT: int = int(os.environ.get("OAUTH_SERVER_PORT", "8080"))
+
 # OpenAI model
 OPENAI_MODEL: str = "gpt-4.1"

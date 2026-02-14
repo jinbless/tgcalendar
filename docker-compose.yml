@@ -7,6 +7,8 @@ services:
       - .env
     volumes:
       - ./data/tokens:/app/data/tokens
+    ports:
+      - "8080:8080"
     restart: unless-stopped
     environment:
       - TZ=Asia/Seoul

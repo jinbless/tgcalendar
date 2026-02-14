@@ -37,14 +37,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
-    auth_url = calendar_service.get_auth_url()
+    auth_url = calendar_service.get_auth_url(chat_id)
     await update.message.reply_text(
         "안녕하세요! 📅 캘린더 봇입니다.\n\n"
-        "Google 계정을 연동하려면 아래 링크를 열어 인증해주세요:\n\n"
+        "Google 계정을 연동하려면 아래 링크를 열어주세요:\n\n"
         f"{auth_url}\n\n"
-        "인증 후 브라우저 주소창에서 code= 뒤의 값을 복사하여\n"
-        "/auth <코드> 형식으로 보내주세요.\n\n"
-        "예: /auth 4/0AX4XfWh..."
+        "권한을 허용하면 자동으로 인증이 완료됩니다!"
     )
 
 
