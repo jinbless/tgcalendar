@@ -10,6 +10,51 @@ logger = logging.getLogger(__name__)
 
 _client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
+# ── Chat History ─────────────────────────────────────────────────
+
+MAX_HISTORY = 20  # max messages per chat (FIFO)
+_chat_histories: dict[int, list[dict]] = {}
+
+
+def _get_history(chat_id: int) -> list[dict]:
+    return _chat_histories.setdefault(chat_id, [])
+
+
+def _trim_history(chat_id: int) -> None:
+    hist = _chat_histories.get(chat_id)
+    if hist and len(hist) > MAX_HISTORY:
+        _chat_histories[chat_id] = hist[-MAX_HISTORY:]
+
+
+def add_user_message(chat_id: int, content: str) -> None:
+    _get_history(chat_id).append({"role": "user", "content": content})
+    _trim_history(chat_id)
+
+
+def add_assistant_tool_call(chat_id: int, tool_call_raw: dict) -> None:
+    """Store the assistant message that contains tool_calls."""
+    _get_history(chat_id).append({
+        "role": "assistant",
+        "tool_calls": [tool_call_raw],
+    })
+    _trim_history(chat_id)
+
+
+def add_tool_result(chat_id: int, tool_call_id: str, content: str) -> None:
+    """Store the tool execution result so GPT can reference it later."""
+    _get_history(chat_id).append({
+        "role": "tool",
+        "tool_call_id": tool_call_id,
+        "content": content,
+    })
+    _trim_history(chat_id)
+
+
+def add_assistant_message(chat_id: int, content: str) -> None:
+    _get_history(chat_id).append({"role": "assistant", "content": content})
+    _trim_history(chat_id)
+
+
 # ── Function Schemas (Tools) ─────────────────────────────────────
 
 TOOLS = [
@@ -45,6 +90,23 @@ TOOLS = [
                     "original_time": {"type": "string", "description": "기존 시작 시간 (HH:MM). 사용자가 시간으로 일정을 지칭한 경우"},
                 },
                 "required": ["title", "date"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_events_by_range",
+            "description": "특정 기간의 일정을 일괄 삭제합니다. '2월 일정 다 지워줘', '이번 주 일정 전부 삭제' 등에 호출하세요.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date_from": {"type": "string", "description": "삭제 시작일 (YYYY-MM-DD)"},
+                    "date_to": {"type": "string", "description": "삭제 종료일 (YYYY-MM-DD). 월 단위 시 해당 월 마지막 날"},
+                    "keyword": {"type": "string", "description": "특정 키워드 일정만 삭제. 전부 삭제 시 생략"},
+                },
+                "required": ["date_from", "date_to"],
                 "additionalProperties": False,
             },
         },
@@ -129,12 +191,16 @@ SYSTEM_PROMPT = """당신은 캘린더 관리 어시스턴트입니다.
 - 상대적 날짜(내일, 다음주 월요일 등)는 오늘 날짜 기준으로 절대 날짜(YYYY-MM-DD)로 변환하세요.
 - 시간은 24시간 형식(HH:MM)으로 변환하세요. (오후 3시 → 15:00)
 - 일정과 관련 없는 일반 대화에는 함수를 호출하지 말고 직접 한국어로 응답하세요.
-- 월 단위 검색 시 date_to는 해당 월의 마지막 날로 설정하세요. (2월 → 2월 28일 또는 29일)"""
+- 월 단위 검색 시 date_to는 해당 월의 마지막 날로 설정하세요. (2월 → 2월 28일 또는 29일)
+- 이전 대화에서 조회한 일정 결과를 참고하여 사용자가 "그거", "첫 번째", "그 회의" 등으로 지칭하는 일정을 파악하세요.
+- 사용자가 이전 조회 결과의 일정을 수정/삭제하려 할 때, 해당 일정의 제목/날짜/시간을 정확히 추출하세요.
+- 범위 삭제 요청("2월 일정 다 지워줘", "이번 주 일정 전부 삭제")에는 delete_events_by_range를 사용하세요.
+- 사용자가 특정 날짜+시간의 기존 일정을 언급하면서 수정/삭제를 요청하면, 새 일정 추가가 아닌 edit_event 또는 delete_event를 호출하세요."""
 
 
 # ── Public API ────────────────────────────────────────────────────
 
-async def process_message(user_message: str) -> dict:
+async def process_message(user_message: str, chat_id: int) -> dict:
     today = datetime.now(TIMEZONE)
     today_str = today.strftime("%Y-%m-%d")
     weekday_names = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
@@ -142,13 +208,16 @@ async def process_message(user_message: str) -> dict:
 
     system = SYSTEM_PROMPT.format(today=today_str, weekday=today_weekday)
 
+    # Build messages: system + history + current user message
+    add_user_message(chat_id, user_message)
+    history = _get_history(chat_id)
+
+    messages = [{"role": "system", "content": system}] + history
+
     try:
         response = await _client.chat.completions.create(
             model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user_message},
-            ],
+            messages=messages,
             tools=TOOLS,
             tool_choice="auto",
             max_tokens=500,
@@ -158,15 +227,29 @@ async def process_message(user_message: str) -> dict:
 
         if message.tool_calls:
             tool_call = message.tool_calls[0]
+
+            # Store assistant tool_call in history
+            add_assistant_tool_call(chat_id, {
+                "id": tool_call.id,
+                "type": "function",
+                "function": {
+                    "name": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
+                },
+            })
+
             return {
                 "type": "function_call",
                 "function_name": tool_call.function.name,
                 "arguments": json.loads(tool_call.function.arguments),
+                "tool_call_id": tool_call.id,
             }
         else:
+            content = message.content or "무엇을 도와드릴까요?"
+            add_assistant_message(chat_id, content)
             return {
                 "type": "text_response",
-                "content": message.content or "무엇을 도와드릴까요?",
+                "content": content,
             }
 
     except APIError as e:

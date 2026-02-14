@@ -31,7 +31,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             '• "오늘 일정 뭐야?"\n'
             '• "이번 주 일정 알려줘"\n'
             '• "내일 팀 회의 삭제해줘"\n'
-            '• "팀 회의 시간 4시로 변경해줘"'
+            '• "팀 회의 시간 4시로 변경해줘"\n'
+            '• "2월 일정 다 지워줘"'
         )
         return
 
@@ -108,6 +109,16 @@ async def _exec_delete_event(chat_id: int, args: dict) -> str:
     return f"❌ 일정 삭제 실패\n{result}"
 
 
+async def _exec_delete_events_by_range(chat_id: int, args: dict) -> str:
+    count, error = await calendar_service.delete_events_by_range(chat_id=chat_id, **args)
+    if count > 0:
+        msg = f"🗑️ {count}개 일정이 삭제되었습니다!\n\n📅 {args['date_from']} ~ {args['date_to']}"
+        if args.get("keyword"):
+            msg += f'\n🔍 키워드: "{args["keyword"]}"'
+        return msg
+    return f"❌ 일정 삭제 실패\n{error}"
+
+
 async def _exec_edit_event(chat_id: int, args: dict) -> str:
     success, result = await calendar_service.edit_event(chat_id=chat_id, **args)
     if success:
@@ -148,6 +159,7 @@ async def _exec_search_events(chat_id: int, args: dict) -> str:
 FUNCTION_REGISTRY = {
     "add_event": _exec_add_event,
     "delete_event": _exec_delete_event,
+    "delete_events_by_range": _exec_delete_events_by_range,
     "edit_event": _exec_edit_event,
     "get_today_events": _exec_get_today_events,
     "get_week_events": _exec_get_week_events,
@@ -165,7 +177,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("먼저 /start 로 인증을 완료해주세요.")
         return
 
-    result = await nlp_service.process_message(user_message)
+    result = await nlp_service.process_message(user_message, chat_id)
 
     if result["type"] == "text_response":
         await update.message.reply_text(result["content"])
@@ -178,6 +190,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Function call
     fn_name = result["function_name"]
     args = result["arguments"]
+    tool_call_id = result.get("tool_call_id")
 
     executor = FUNCTION_REGISTRY.get(fn_name)
     if not executor:
@@ -187,9 +200,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         reply = await executor(chat_id, args)
+        # Feed execution result back into conversation history
+        if tool_call_id:
+            nlp_service.add_tool_result(chat_id, tool_call_id, reply)
         await update.message.reply_text(reply)
     except Exception:
         logger.exception("Error executing %s", fn_name)
+        if tool_call_id:
+            nlp_service.add_tool_result(chat_id, tool_call_id, "처리 중 오류가 발생했습니다.")
         await update.message.reply_text("처리 중 오류가 발생했습니다.")
 
 

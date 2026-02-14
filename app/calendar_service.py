@@ -469,6 +469,61 @@ def _find_events_by_date(creds: Credentials, date: str) -> list[dict]:
     return result.get("items", [])
 
 
+async def delete_events_by_range(
+    chat_id: int,
+    date_from: str,
+    date_to: str,
+    keyword: str | None = None,
+) -> tuple[int, str]:
+    """Delete all events in a date range. Returns (count_deleted, error_message)."""
+    creds = await asyncio.to_thread(_load_credentials, chat_id)
+    if creds is None:
+        return 0, "인증이 만료되었습니다. /start로 다시 인증해주세요."
+
+    def _bulk_delete():
+        time_min = _safe_parse_date(date_from).replace(tzinfo=TIMEZONE)
+        time_max = _safe_parse_date(date_to).replace(
+            hour=23, minute=59, second=59, tzinfo=TIMEZONE
+        )
+
+        service = build("calendar", "v3", credentials=creds)
+        params = {
+            "calendarId": SHARED_CALENDAR_ID,
+            "timeMin": time_min.isoformat(),
+            "timeMax": time_max.isoformat(),
+            "singleEvents": True,
+            "orderBy": "startTime",
+        }
+        if keyword:
+            params["q"] = keyword
+
+        result = service.events().list(**params).execute()
+        events = result.get("items", [])
+
+        if not events:
+            return 0, "해당 기간에 일정이 없습니다."
+
+        deleted = 0
+        for event in events:
+            service.events().delete(
+                calendarId=SHARED_CALENDAR_ID, eventId=event["id"]
+            ).execute()
+            deleted += 1
+
+        return deleted, ""
+
+    try:
+        count, error = await asyncio.to_thread(_bulk_delete)
+        return count, error
+    except HttpError as e:
+        if e.resp.status == 403:
+            return 0, "캘린더 접근 권한이 없습니다."
+        return 0, f"Google API 오류: {e.resp.status}"
+    except Exception:
+        logger.exception("Unexpected error in delete_events_by_range")
+        return 0, "알 수 없는 오류가 발생했습니다."
+
+
 def _match_event(events: list[dict], title: str, start_time: str | None = None) -> dict | None:
     """Match an event by title, then by start time, then by single-event fallback."""
     if not events:
