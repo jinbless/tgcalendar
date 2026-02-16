@@ -41,6 +41,5 @@ OAUTH_SERVER_PORT: int = int(os.environ.get("OAUTH_SERVER_PORT", "8080"))
 # OpenAI model
 OPENAI_MODEL: str = "gpt-4.1"
 
-# Naver Cloud Platform (Geocoding API)
-NAVER_CLIENT_ID: str = os.environ.get("NAVER_CLIENT_ID", "")
-NAVER_CLIENT_SECRET: str = os.environ.get("NAVER_CLIENT_SECRET", "")
+# Google Maps (Geocoding API)
+GOOGLE_MAPS_API_KEY: str = os.environ.get("GOOGLE_MAPS_API_KEY", "")

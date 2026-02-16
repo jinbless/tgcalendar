@@ -11,7 +11,7 @@ from telegram.ext import (
     filters,
 )
 
-from app import calendar_service, naver_service, nlp_service
+from app import calendar_service, geo_service, nlp_service
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +189,7 @@ async def _exec_navigate(chat_id: int, args: dict) -> str:
     if not destination:
         return "목적지를 알려주세요."
 
-    result = await naver_service.geocode(destination)
+    result = await geo_service.geocode(destination)
     if result is None:
         return f"'{destination}'의 위치를 찾을 수 없습니다. 더 구체적인 주소나 장소명을 알려주세요."
 
@@ -240,7 +240,7 @@ async def _exec_navigate_to_event(chat_id: int, args: dict) -> str:
     summary = target.get("summary", "(제목 없음)")
     _, time_str = _event_time(target)
 
-    result = await naver_service.geocode(location)
+    result = await geo_service.geocode(location)
     if result is None:
         return f"'{location}'의 위치를 찾을 수 없습니다."
 
@@ -413,7 +413,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
-    url = naver_service.build_directions_url(
+    url = geo_service.build_directions_url(
         start_lat=location.latitude,
         start_lng=location.longitude,
         dest_lat=pending["lat"],
