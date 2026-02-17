@@ -186,24 +186,23 @@ _pending_navigation: dict[int, dict] = {}
 
 async def _exec_navigate(chat_id: int, args: dict) -> str:
     destination = args.get("destination", "")
-    if not destination:
-        return "목적지를 알려주세요."
-
-    result = await geo_service.geocode(destination)
-    if result is None:
-        return f"'{destination}'의 위치를 찾을 수 없습니다. 더 구체적인 주소나 장소명을 알려주세요."
-
-    _pending_navigation[chat_id] = {
-        "destination": destination,
-        "lat": result["lat"],
-        "lng": result["lng"],
-        "address": result["address"],
-    }
-    return f"📍 '{destination}' 위치를 찾았습니다!\n({result['address']})\n\n아래 버튼을 눌러 현재 위치를 공유해주세요."
-
-
-async def _exec_navigate_to_event(chat_id: int, args: dict) -> str:
+    title_filter = args.get("title", "")
     date_str = args.get("date", "")
+
+    # Case 1: direct destination provided
+    if destination:
+        result = await geo_service.geocode(destination)
+        if result is None:
+            return f"'{destination}'의 위치를 찾을 수 없습니다. 더 구체적인 주소나 장소명을 알려주세요."
+        _pending_navigation[chat_id] = {
+            "destination": destination,
+            "lat": result["lat"],
+            "lng": result["lng"],
+            "address": result["address"],
+        }
+        return f"📍 '{destination}' 위치를 찾았습니다!\n({result['address']})\n\n아래 버튼을 눌러 현재 위치를 공유해주세요."
+
+    # Case 2: calendar event reference (title/date provided or fallback to next event)
     if date_str:
         events = await calendar_service.search_events(
             chat_id=chat_id, date_from=date_str, date_to=date_str
@@ -215,9 +214,7 @@ async def _exec_navigate_to_event(chat_id: int, args: dict) -> str:
         label = date_str if date_str else "오늘"
         return f"{label} 예정된 일정이 없습니다."
 
-    title_filter = args.get("title", "")
     now = datetime.now()
-
     target = None
     for event in events:
         summary = event.get("summary", "")
@@ -225,7 +222,6 @@ async def _exec_navigate_to_event(chat_id: int, args: dict) -> str:
         if not location:
             continue
 
-        # If title filter is given, match it
         if title_filter and title_filter not in summary:
             continue
 
@@ -276,12 +272,11 @@ FUNCTION_REGISTRY = {
     "get_week_events": _exec_get_week_events,
     "search_events": _exec_search_events,
     "navigate": _exec_navigate,
-    "navigate_to_event": _exec_navigate_to_event,
 }
 
 _MUTATION_FUNCTIONS = {"add_event", "add_events_by_range", "add_multiday_event", "delete_event", "delete_events_by_range", "edit_event"}
 _QUERY_FUNCTIONS = {"get_today_events", "get_week_events", "search_events"}
-_NAVIGATION_FUNCTIONS = {"navigate", "navigate_to_event"}
+_NAVIGATION_FUNCTIONS = {"navigate"}
 
 
 def _extract_month_range(fn_name: str, args: dict) -> tuple[str, str] | None:
