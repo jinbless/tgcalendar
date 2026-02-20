@@ -118,9 +118,11 @@ async def process_message(user_message: str, chat_id: int) -> dict:
         return {"type": "error", "content": "메시지 처리 중 오류가 발생했습니다."}
 
 
-async def get_followup_response(chat_id: int) -> str:
+async def get_followup_response(chat_id: int, filter_instruction: str | None = None) -> str:
     """Call GPT again after tool result to compose a natural response."""
     messages = _build_messages(chat_id)
+    if filter_instruction:
+        messages.append({"role": "user", "content": filter_instruction})
 
     try:
         response = await _client.chat.completions.create(

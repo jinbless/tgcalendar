@@ -411,7 +411,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             has_keyword = fn_name == "search_events" and args.get("keyword")
             if has_keyword:
                 # Semantic filtering needed — let GPT compose the response
-                gpt_reply = await nlp_service.get_followup_response(chat_id)
+                keyword = args["keyword"]
+                filter_instruction = (
+                    f'위 일정 목록에서 "{keyword}"와 의미적으로 관련된 일정만 골라서 안내해주세요. '
+                    f'관련 없는 일정은 제외하세요.'
+                )
+                gpt_reply = await nlp_service.get_followup_response(chat_id, filter_instruction)
                 await update.message.reply_text(gpt_reply)
             else:
                 # Full listing — send formatted text directly
