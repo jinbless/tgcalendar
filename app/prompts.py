@@ -17,6 +17,7 @@ TOOLS = [
                     "date": {"type": "string", "description": "날짜 (YYYY-MM-DD 형식). 상대 날짜는 절대 날짜로 변환"},
                     "start_time": {"type": "string", "description": "시작 시간 (HH:MM 형식, 24시간)"},
                     "end_time": {"type": "string", "description": "종료 시간 (HH:MM 형식, 24시간). 언급 없으면 생략"},
+                    "location": {"type": "string", "description": "장소. 언급 없으면 생략"},
                     "description": {"type": "string", "description": "일정 설명. 언급 없으면 생략"},
                 },
                 "required": ["title", "date", "start_time"],
@@ -37,6 +38,7 @@ TOOLS = [
                     "date_to": {"type": "string", "description": "종료 날짜 (YYYY-MM-DD)"},
                     "start_time": {"type": "string", "description": "시작 시간 (HH:MM 형식, 24시간)"},
                     "end_time": {"type": "string", "description": "종료 시간 (HH:MM 형식, 24시간). 언급 없으면 생략"},
+                    "location": {"type": "string", "description": "장소. 언급 없으면 생략"},
                     "description": {"type": "string", "description": "일정 설명. 언급 없으면 생략"},
                 },
                 "required": ["title", "date_from", "date_to", "start_time"],
@@ -55,6 +57,7 @@ TOOLS = [
                     "title": {"type": "string", "description": "일정 제목"},
                     "date_from": {"type": "string", "description": "시작 날짜 (YYYY-MM-DD)"},
                     "date_to": {"type": "string", "description": "종료 날짜 (YYYY-MM-DD)"},
+                    "location": {"type": "string", "description": "장소. 언급 없으면 생략"},
                     "description": {"type": "string", "description": "일정 설명. 언급 없으면 생략"},
                 },
                 "required": ["title", "date_from", "date_to"],
@@ -115,6 +118,7 @@ TOOLS = [
                             "date": {"type": "string", "description": "새 날짜 (YYYY-MM-DD)"},
                             "start_time": {"type": "string", "description": "새 시작 시간 (HH:MM)"},
                             "end_time": {"type": "string", "description": "새 종료 시간 (HH:MM)"},
+                            "location": {"type": "string", "description": "새 장소"},
                             "description": {"type": "string", "description": "새 설명"},
                         },
                         "additionalProperties": False,
@@ -203,14 +207,9 @@ SYSTEM_PROMPT = """당신은 캘린더 관리 어시스턴트입니다.
 - 시간은 24시간 형식(HH:MM)으로 변환하세요. (오후 3시 → 15:00)
 - 일정과 관련 없는 일반 대화에는 함수를 호출하지 말고 직접 한국어로 응답하세요.
 - 월 단위 검색 시 date_to는 해당 월의 마지막 날로 설정하세요. (2월 → 2월 28일 또는 29일)
-- 이전 대화에서 조회한 일정 결과를 참고하여 사용자가 "그거", "첫 번째", "그 회의" 등으로 지칭하는 일정을 파악하세요.
-- 사용자가 '1번', '2번', '3번 일정' 등 번호로 일정을 참조하면, 이전 조회 결과에서 해당 번호의 일정 제목·날짜·시간을 정확히 파악하여 함수를 호출하세요.
-- 일정 조회 결과의 번호로 수정/삭제/길찾기를 요청하면, 반드시 해당 일정 정보를 추출하여 적절한 함수(edit_event, delete_event, navigate)를 호출하세요. 텍스트로 응답하지 마세요.
-- 사용자가 이전 조회 결과의 일정을 수정/삭제하려 할 때, 해당 일정의 제목/날짜/시간을 정확히 추출하세요.
-- 사용자가 번호로 일정을 참조할 때는, 가장 마지막에 안내한 응답의 번호 기준으로 해석하세요.
-- 사용자가 이전 조회 결과의 일정에 대해 장소, 시간, 설명 등 상세 정보를 물어보면, 히스토리를 참고하여 직접 답변하세요. 정보가 없으면 "해당 일정에 장소 정보가 등록되어 있지 않습니다"라고 안내하세요.
-- keyword 검색이 아닌 일정 조회 결과를 안내할 때는 모든 일정을 빠짐없이 포함하세요. 일정을 임의로 요약하거나 생략하지 마세요.
-- search_events의 keyword 검색 결과를 안내할 때는, 해당 키워드와 의미적으로 관련된 일정만 골라서 응답하세요. 제목이나 설명에 키워드가 직접 포함되거나 의미적으로 연관된 일정만 포함하고, 관련 없는 일정은 제외하세요. 결과는 "1. 📅 날짜 🕐 시간 - 제목" 형식으로 연번을 붙여 안내하세요.
+- 사용자가 번호로 일정을 참조하면, [최근 조회/변경 결과] 섹션의 해당 번호 정보로 함수를 호출하거나 답변하세요. 수정/삭제/길찾기 요청 시 반드시 적절한 함수를 호출하세요.
+- 사용자가 이전 대화 맥락에서 일정의 상세 정보(장소, 시간, 설명 등)를 물어보면, [최근 조회/변경 결과] 섹션을 참고하여 직접 답변하세요. 정보가 없으면 "해당 일정에 장소 정보가 등록되어 있지 않습니다"라고 안내하세요.
+- 사용자가 이전 대화의 맥락에서 암묵적으로 일정 수정을 요청하면 (예: 장소를 물어본 후 장소를 알려주는 경우), 의도를 파악하여 edit_event를 호출하세요.
 - 범위 삭제 요청("2월 일정 다 지워줘", "이번 주 일정 전부 삭제")에는 delete_events_by_range를 사용하세요.
 - 사용자가 특정 날짜+시간의 기존 일정을 언급하면서 수정/삭제를 요청하면, 새 일정 추가가 아닌 edit_event 또는 delete_event를 호출하세요.
 - 출장, 휴가, 여행 등 기간 일정은 add_multiday_event를 사용하세요 (종일 단일 이벤트).

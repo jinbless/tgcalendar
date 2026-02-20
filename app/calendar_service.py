@@ -160,6 +160,7 @@ async def add_event(
     date: str,
     start_time: str,
     end_time: str | None = None,
+    location: str | None = None,
     description: str | None = None,
 ) -> tuple[bool, str]:
     creds = await asyncio.to_thread(_load_credentials, chat_id)
@@ -178,6 +179,8 @@ async def add_event(
             "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE_STR},
             "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE_STR},
         }
+        if location:
+            event_body["location"] = location
         if description:
             event_body["description"] = description
 
@@ -208,6 +211,7 @@ async def add_events_by_range(
     date_to: str,
     start_time: str,
     end_time: str | None = None,
+    location: str | None = None,
     description: str | None = None,
 ) -> tuple[int, str]:
     """Add an event on each day from date_from to date_to. Returns (count, error)."""
@@ -235,6 +239,8 @@ async def add_events_by_range(
                 "start": {"dateTime": start_dt.isoformat(), "timeZone": TIMEZONE_STR},
                 "end": {"dateTime": end_dt.isoformat(), "timeZone": TIMEZONE_STR},
             }
+            if location:
+                event_body["location"] = location
             if description:
                 event_body["description"] = description
 
@@ -265,6 +271,7 @@ async def add_multiday_event(
     title: str,
     date_from: str,
     date_to: str,
+    location: str | None = None,
     description: str | None = None,
 ) -> tuple[bool, str]:
     """Create a single all-day event spanning date_from to date_to."""
@@ -282,6 +289,8 @@ async def add_multiday_event(
             "start": {"date": date_from},
             "end": {"date": end_date_str},
         }
+        if location:
+            event_body["location"] = location
         if description:
             event_body["description"] = description
 
@@ -413,6 +422,9 @@ async def edit_event(
                 "dateTime": end_dt.isoformat(),
                 "timeZone": TIMEZONE_STR,
             }
+
+        if changes.get("location"):
+            matched["location"] = changes["location"]
 
         if changes.get("description"):
             matched["description"] = changes["description"]

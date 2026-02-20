@@ -1,5 +1,6 @@
 import calendar as cal
 import logging
+import re
 from datetime import datetime, timedelta
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -95,6 +96,8 @@ async def _exec_add_event(chat_id: int, args: dict) -> str:
         if args.get("end_time"):
             time_str += f" - {args['end_time']}"
         reply = f"✅ 일정이 추가되었습니다!\n\n📅 {args['date']}\n🕐 {time_str}\n📝 {args['title']}"
+        if args.get("location"):
+            reply += f"\n📍 {args['location']}"
         if args.get("description"):
             reply += f"\n💬 {args['description']}"
         return reply
@@ -108,6 +111,8 @@ async def _exec_add_events_by_range(chat_id: int, args: dict) -> str:
         if args.get("end_time"):
             time_str += f" - {args['end_time']}"
         msg = f"✅ {count}개 일정이 추가되었습니다!\n\n📅 {args['date_from']} ~ {args['date_to']}\n🕐 {time_str}\n📝 {args['title']}"
+        if args.get("location"):
+            msg += f"\n📍 {args['location']}"
         if args.get("description"):
             msg += f"\n💬 {args['description']}"
         return msg
@@ -118,6 +123,8 @@ async def _exec_add_multiday_event(chat_id: int, args: dict) -> str:
     success, result = await calendar_service.add_multiday_event(chat_id=chat_id, **args)
     if success:
         reply = f"✅ 일정이 추가되었습니다!\n\n📅 {args['date_from']} ~ {args['date_to']}\n📝 {args['title']}"
+        if args.get("location"):
+            reply += f"\n📍 {args['location']}"
         if args.get("description"):
             reply += f"\n💬 {args['description']}"
         return reply
@@ -155,6 +162,8 @@ async def _exec_edit_event(chat_id: int, args: dict) -> str:
             details.append(f"시작 → {changes['start_time']}")
         if changes.get("end_time"):
             details.append(f"종료 → {changes['end_time']}")
+        if changes.get("location"):
+            details.append(f"장소 → {changes['location']}")
         if changes.get("description"):
             details.append(f"설명 → {changes['description']}")
         if details:
@@ -165,17 +174,59 @@ async def _exec_edit_event(chat_id: int, args: dict) -> str:
 
 async def _exec_get_today_events(chat_id: int, args: dict) -> str:
     events = await calendar_service.get_today_events()
+    _last_raw_events[chat_id] = events
     return format_today_events(events)
 
 
 async def _exec_get_week_events(chat_id: int, args: dict) -> str:
     events = await calendar_service.get_week_events()
+    _last_raw_events[chat_id] = events
     return format_week_events(events)
 
 
 async def _exec_search_events(chat_id: int, args: dict) -> str:
     events = await calendar_service.search_events(chat_id=chat_id, **args)
+    _last_raw_events[chat_id] = events
     return format_search_results(events, args.get("keyword"))
+
+
+# ── Raw Event Cache ──────────────────────────────────────────────
+
+_last_raw_events: dict[int, list[dict]] = {}
+
+
+def _extract_event_context(events: list[dict]) -> list[dict]:
+    """Extract structured context from raw Google Calendar events for GPT injection."""
+    result = []
+    for i, event in enumerate(events, 1):
+        title = event.get("summary", "(제목 없음)")
+        dt_str, time_str = _event_time(event)
+
+        # Extract end time
+        end_time = ""
+        end = event.get("end", {})
+        if "dateTime" in end:
+            end_time = end["dateTime"][11:16]
+
+        # Extract start_time (not the full time_str which may include "종일")
+        start_time = time_str
+        start = event.get("start", {})
+        if "dateTime" in start:
+            start_time = start["dateTime"][11:16]
+
+        location = _extract_location(event)
+        description = event.get("description", "")
+
+        result.append({
+            "idx": i,
+            "title": title,
+            "date": dt_str,
+            "start_time": start_time,
+            "end_time": end_time,
+            "location": location,
+            "description": description,
+        })
+    return result
 
 
 # ── Navigation ───────────────────────────────────────────────────
@@ -319,11 +370,12 @@ def _extract_month_range(fn_name: str, args: dict) -> tuple[str, str] | None:
         return None
 
 
-async def _get_month_summary(chat_id: int, fn_name: str, args: dict) -> str | None:
-    """Fetch and format the affected month's events after a mutation."""
+async def _get_month_summary(chat_id: int, fn_name: str, args: dict) -> tuple[str | None, list[dict]]:
+    """Fetch and format the affected month's events after a mutation.
+    Returns (formatted_summary, raw_events)."""
     month_range = _extract_month_range(fn_name, args)
     if not month_range:
-        return None
+        return None, []
 
     date_from, date_to = month_range
     try:
@@ -332,12 +384,12 @@ async def _get_month_summary(chat_id: int, fn_name: str, args: dict) -> str | No
         )
     except Exception:
         logger.exception("Error fetching month summary")
-        return None
+        return None, []
 
     month_label = f"{date_from[:4]}년 {int(date_from[5:7])}월"
 
     if not events:
-        return f"\n📋 {month_label} 전체 일정: 없음"
+        return f"\n📋 {month_label} 전체 일정: 없음", []
 
     lines = [f"\n📋 {month_label} 전체 일정 ({len(events)}건):"]
     current_date = ""
@@ -359,7 +411,7 @@ async def _get_month_summary(chat_id: int, fn_name: str, args: dict) -> str | No
         if detail:
             lines.append(f"      {detail}")
 
-    return "\n".join(lines)
+    return "\n".join(lines), events
 
 
 # ── Natural Language Message Handler ──────────────────────────────
@@ -409,30 +461,62 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             _pending_navigation[chat_id]["prompt_message_id"] = sent.message_id
         elif fn_name in _QUERY_FUNCTIONS:
             has_keyword = fn_name == "search_events" and args.get("keyword")
-            if has_keyword:
-                # Semantic filtering needed — let GPT compose the response
+            raw_events = _last_raw_events.pop(chat_id, [])
+
+            if has_keyword and raw_events:
+                # Index-based filtering: ask GPT for matching indices only
                 keyword = args["keyword"]
                 filter_instruction = (
-                    f'위 일정 목록에서 "{keyword}"와 의미적으로 관련된 일정만 골라서 안내해주세요. '
-                    f'관련 없는 일정은 제외하세요. '
-                    f'결과는 "1. 📅 날짜 🕐 시간 - 제목" 형식으로 연번을 붙여주세요.'
+                    f'위 {len(raw_events)}개 일정 목록에서 "{keyword}"와 직접적으로 관련된 '
+                    f'일정의 번호만 쉼표로 답변하세요. 예: "1,3,5". 없으면 "없음". '
+                    f'제목이나 설명에 키워드가 포함되거나 동일한 주제인 일정만 포함하고, '
+                    f'단순히 비슷한 글자가 들어간 일정은 제외하세요.'
                 )
-                gpt_reply = await nlp_service.get_followup_response(chat_id, filter_instruction)
-                # Replace full tool result with filtered result for clean history
-                nlp_service.replace_last_tool_result(chat_id, gpt_reply)
-                await update.message.reply_text(gpt_reply)
+                gpt_indices = await nlp_service.get_followup_response(
+                    chat_id, filter_instruction, max_tokens=100
+                )
+
+                # Parse indices from GPT response (e.g. "1,3,5" or "없음")
+                filtered_events = []
+                if "없음" not in gpt_indices:
+                    idx_matches = re.findall(r'\d+', gpt_indices)
+                    for idx_str in idx_matches:
+                        idx = int(idx_str) - 1  # 1-based → 0-based
+                        if 0 <= idx < len(raw_events):
+                            filtered_events.append(raw_events[idx])
+
+                # Format the filtered results with our formatter
+                filtered_reply = format_search_results(filtered_events, keyword)
+
+                # Replace both the full tool result and GPT's index response
+                # in history with the clean filtered result
+                nlp_service.replace_last_tool_result(chat_id, filtered_reply)
+                await update.message.reply_text(filtered_reply)
+
+                # Set context from filtered events only
+                nlp_service.set_event_context(
+                    chat_id, _extract_event_context(filtered_events)
+                )
             else:
                 # Full listing — send formatted text directly
                 await update.message.reply_text(reply)
                 nlp_service.add_assistant_message(chat_id, reply)
+
+                # Set structured event context for number references
+                nlp_service.set_event_context(
+                    chat_id, _extract_event_context(raw_events)
+                )
         else:
             await update.message.reply_text(reply)
 
             # After mutation, show the affected month's events
             if fn_name in _MUTATION_FUNCTIONS:
-                month_summary = await _get_month_summary(chat_id, fn_name, args)
+                month_summary, month_events = await _get_month_summary(chat_id, fn_name, args)
                 if month_summary:
                     await update.message.reply_text(month_summary)
+                    nlp_service.add_assistant_message(chat_id, month_summary)
+                    # Set structured context from month events for number references
+                    nlp_service.set_event_context(chat_id, _extract_event_context(month_events))
     except Exception:
         logger.exception("Error executing %s", fn_name)
         if tool_call_id:

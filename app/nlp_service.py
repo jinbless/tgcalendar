@@ -16,6 +16,9 @@ _client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 MAX_HISTORY = 100  # max messages per chat (FIFO)
 _chat_histories: dict[int, list[dict]] = {}
 
+# ── Event Context (injected into system prompt for number references) ──
+_last_event_context: dict[int, list[dict]] = {}
+
 
 def _get_history(chat_id: int) -> list[dict]:
     return _chat_histories.setdefault(chat_id, [])
@@ -65,6 +68,48 @@ def replace_last_tool_result(chat_id: int, new_content: str) -> None:
             break
 
 
+def set_event_context(chat_id: int, events: list[dict]) -> None:
+    """Store structured event context for system prompt injection."""
+    _last_event_context[chat_id] = events
+
+
+def clear_event_context(chat_id: int) -> None:
+    """Clear the event context for a chat."""
+    _last_event_context.pop(chat_id, None)
+
+
+def _format_event_context(chat_id: int) -> str:
+    """Format event context as a compact block for system prompt injection."""
+    events = _last_event_context.get(chat_id)
+    if not events:
+        return ""
+
+    lines = ["\n\n[최근 조회/변경 결과 - 번호로 참조 가능]"]
+    for ev in events:
+        idx = ev.get("idx", "?")
+        title = ev.get("title", "(제목 없음)")
+        date = ev.get("date", "")
+        start_time = ev.get("start_time", "종일")
+        end_time = ev.get("end_time", "")
+        location = ev.get("location", "")
+        description = ev.get("description", "")
+
+        time_str = start_time
+        if end_time:
+            time_str += f"~{end_time}"
+
+        parts = [f"{idx}: {title} | {date} | {time_str}"]
+        if location:
+            parts[0] += f" | 📍{location}"
+        if description:
+            # Truncate long descriptions
+            desc_short = description[:50] + "..." if len(description) > 50 else description
+            parts[0] += f" | 💬{desc_short}"
+        lines.append(parts[0])
+
+    return "\n".join(lines)
+
+
 # ── Public API ────────────────────────────────────────────────────
 
 def _build_messages(chat_id: int) -> list[dict]:
@@ -73,6 +118,12 @@ def _build_messages(chat_id: int) -> list[dict]:
     weekday_names = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
     today_weekday = weekday_names[today.weekday()]
     system = SYSTEM_PROMPT.format(today=today_str, weekday=today_weekday)
+
+    # Inject structured event context into system prompt
+    event_context = _format_event_context(chat_id)
+    if event_context:
+        system += event_context
+
     return [{"role": "developer", "content": system}] + _get_history(chat_id)
 
 
@@ -127,7 +178,11 @@ async def process_message(user_message: str, chat_id: int) -> dict:
         return {"type": "error", "content": "메시지 처리 중 오류가 발생했습니다."}
 
 
-async def get_followup_response(chat_id: int, filter_instruction: str | None = None) -> str:
+async def get_followup_response(
+    chat_id: int,
+    filter_instruction: str | None = None,
+    max_tokens: int = 5000,
+) -> str:
     """Call GPT again after tool result to compose a natural response."""
     messages = _build_messages(chat_id)
     if filter_instruction:
@@ -137,7 +192,7 @@ async def get_followup_response(chat_id: int, filter_instruction: str | None = N
         response = await _client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=messages,
-            max_completion_tokens=5000,
+            max_completion_tokens=max_tokens,
             reasoning_effort="medium",
         )
         content = response.choices[0].message.content or "결과를 처리할 수 없습니다."
