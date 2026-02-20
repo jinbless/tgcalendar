@@ -467,13 +467,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 # Index-based filtering: ask GPT for matching indices only
                 keyword = args["keyword"]
                 filter_instruction = (
-                    f'위 {len(raw_events)}개 일정 목록에서 "{keyword}"와 직접적으로 관련된 '
+                    f'위 {len(raw_events)}개 일정 목록에서 "{keyword}"와 관련된 '
                     f'일정의 번호만 쉼표로 답변하세요. 예: "1,3,5". 없으면 "없음". '
-                    f'제목이나 설명에 키워드가 포함되거나 동일한 주제인 일정만 포함하고, '
-                    f'단순히 비슷한 글자가 들어간 일정은 제외하세요.'
+                    f'제목이나 설명에 "{keyword}"가 포함된 일정은 반드시 포함하세요. '
+                    f'의미적으로 동일한 주제인 일정도 포함하되, '
+                    f'단순히 비슷한 글자가 들어간 일정(예: 노사누리≠노동부, 노사누리≠노무사회)은 제외하세요.'
                 )
                 gpt_indices = await nlp_service.get_followup_response(
-                    chat_id, filter_instruction, max_tokens=100
+                    chat_id, filter_instruction, max_tokens=2000
                 )
 
                 # Parse indices from GPT response (e.g. "1,3,5" or "없음")
